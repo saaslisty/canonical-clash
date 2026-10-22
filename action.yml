@@ -1,0 +1,60 @@
+name: "canonical-clash"
+description: "Find conflicting canonical signals: canonical tag vs XML sitemap vs redirect chains. Zero dependencies."
+author: "canonical-clash contributors"
+
+branding:
+  icon: "git-merge"
+  color: "orange"
+
+inputs:
+  sitemap-or-urls-file:
+    description: "A sitemap URL (https://...) or the path of a text file with one URL per line."
+    required: true
+  limit:
+    description: "Maximum number of URLs to check (0 = no limit)."
+    required: false
+    default: "50"
+  timeout:
+    description: "Per-request timeout in seconds."
+    required: false
+    default: "15"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Run canonical-clash
+      shell: bash
+      env:
+        CC_TARGET: ${{ inputs.sitemap-or-urls-file }}
+        CC_LIMIT: ${{ inputs.limit }}
+        CC_TIMEOUT: ${{ inputs.timeout }}
+      run: |
+        if [[ "$CC_TARGET" =~ ^https?:// ]]; then
+          SOURCE_ARGS=(--sitemap "$CC_TARGET")
+        else
+          SOURCE_ARGS=(--urls "$CC_TARGET")
+        fi
+        python3 "${{ github.action_path }}/check.py" \
+          "${SOURCE_ARGS[@]}" \
+          --limit "$CC_LIMIT" \
+          --timeout "$CC_TIMEOUT" \
+          --json canonical-report.json \
+          --md canonical-report.md
+
+    - name: Add report to job summary
+      if: always()
+      shell: bash
+      run: |
+        if [ -f canonical-report.md ]; then
+          cat canonical-report.md >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    - name: Upload reports
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: canonical-clash-report
+        path: |
+          canonical-report.json
+          canonical-report.md
+        if-no-files-found: warn
